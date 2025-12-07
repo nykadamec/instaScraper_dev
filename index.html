@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>instaScraper - Powered by Apify</title>
+    <meta
+      name="description"
+      content="The ultimate Instagram scraping API built on Apify's enterprise infrastructure. Reliable, scalable, and maintenance-free."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="bg-canvas"></canvas>
+    <div class="bg-glow"></div>
+    <div class="grid-overlay"></div>
+
+    <header class="container">
+      <!-- Partner Badge -->
+      <div style="margin-top: 2rem" class="badge-saas animate-fade-up">
+        <span style="opacity: 0.7">Coming soon - <b>2026 Q1</b> </span>
+      </div>
+
+      <h1 class="logo-text animate-fade-up delay-100">
+        <span>instaScraper</span> Cloud
+      </h1>
+
+      <p class="tagline animate-fade-up delay-200">
+        The ultimate web platform for Instagram data extraction. <br />
+        Our core algorithms leverage the <strong>Apify SDK</strong> to ensure stability, 
+        utilizing residential proxies and intelligent fingerprint rotation. 
+        Enterprise-grade scraping technology, simplified for everyone.
+      </p>
+
+      <!-- Code Preview: SDK/Actor Focus -->
+      <div class="api-window animate-fade-up delay-300">
+        <div class="window-header">
+          <div class="window-actions">
+            <div class="win-btn"></div>
+            <div class="win-btn"></div>
+            <div class="win-btn"></div>
+          </div>
+          <div class="win-title">NODE.JS</div>
+          <button class="run-btn" id="runCodeBtn">▶ Run</button>
+        </div>
+        <div class="code-content" id="codeContent">
+          <div class="comment">
+            // Scrape any Instagram Post (Image, Video, Sidecar)
+          </div>
+          <div>
+            <span class="keyword">const</span> post = 
+            <span class="keyword">await</span> client.<span class="func">scrapePost</span>({<br />
+            &nbsp;&nbsp;url: <span class="string">'https://instagr.am/p/DLNsnp...'</span><br />
+            });
+          </div>
+          <br />
+          <div>
+            <span class="comment">// Handle Sidecar (Carousel) or Single Image</span>
+          </div>
+          <div>
+            <span class="keyword">const</span> images = post.type === <span class="string">'Sidecar'</span><br />
+            &nbsp;&nbsp;? post.childPosts.map(p => p.displayUrl)<br />
+            &nbsp;&nbsp;: [post.displayUrl];
+          </div>
+          <br />
+          <div>
+            console.<span class="func">log</span>(images);
+            <span class="comment">// ['https://cdn...jpg', 'https://cdn...jpg']</span><span class="cursor-blink"></span>
+          </div>
+        </div>
+        
+        <div class="terminal-output" id="terminalOutput">
+            <!-- Logs will appear here -->
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- Features Grid -->
+      <section class="features-section">
+        <div class="grid">
+          <div class="card animate-fade-up delay-300">
+            <div class="card-icon">⚡</div>
+            <h3>Instant Extraction</h3>
+            <p>
+              Paste any Instagram Post URL and get raw data + high-quality media instantly. No login required.
+            </p>
+          </div>
+          <div class="card animate-fade-up delay-400">
+            <div class="card-icon">📂</div>
+            <h3>Cloud Gallery</h3>
+            <p>
+              Automatically save, organize, and zip your scraped images and videos in your private cloud storage.
+            </p>
+          </div>
+          <div class="card animate-fade-up delay-500" style="opacity: 0.5; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+            <div class="card-icon">🔒</div>
+            <h3 style="margin-bottom: 0;">Coming Soon</h3>
+          </div>
+          <div class="card animate-fade-up delay-500" style="opacity: 0.5; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+            <div class="card-icon">🔒</div>
+            <h3 style="margin-bottom: 0;">Coming Soon</h3>
+          </div>
+        </div>
+      </section>
+
+       <!-- Section: Subscription Plan -->
+      <section class="subscription-plan animate-fade-up delay-100 hidden">
+      <span
+        class="section-text animate-fade-up delay-100"
+        style="font-size: 2rem; border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important; padding-bottom: 0.5rem !important"
+      >
+        Subscription Plan
+      </span>
+      <br />
+        <p class="tagline animate-fade-up delay-200" style="font-size: 0.75rem; text-align: center; margin-bottom: 1.5rem !important">
+        At its core, this platform is simply:
+        <strong style="color: #e4e4e7"
+          >URL &rarr; System Process &rarr; Image Output</strong
+        >
+        ... it's all what you need <br />
+        Features like the Gallery and future updates are why you should consider
+        supporting the project. Thank you.
+      </p>
+      
+      <!-- Pricing & Usage Plans -->
+      <div
+        class="features-section animate-fade-up delay-300"
+        style="margin-top: rem; padding-bottom: 2rem"
+      >
+        <div class="grid">
+          <!-- Free Tier -->
+          <div class="card">
+            <div class="card-icon">⚡</div>
+          <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 0.5rem;
+                flex-direction: column;
+                gap: 0.5rem;
+              "
+            >
+              <h3 style="margin: 0">Basic Tier</h3>
+              <span
+                style="
+                  background: var(--accent-purple);
+                  color: white;
+                  font-size: 0.75rem;
+                  padding: 2px 8px;
+                  border-radius: 12px;
+                "
+                >$0.00/mo</span
+              >
+            </div>
+            <p style="margin-bottom: 1rem">
+              Open to everyone. You receive
+              <strong>10 daily credits</strong> (10 posts). Data is encrypted
+              but cannot be saved to the cloud gallery.
+            </p>
+            <p
+              style="
+                font-size: 0.8rem;
+                opacity: 0.6;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                padding-top: 0.5rem;
+              "
+            >
+              System hard limit: 20 posts/day (even with purchased credits) to
+              cover infrastructure costs.
+            </p>
+          </div>
+
+          <!-- Supporter Tier -->
+          <div
+            class="card"
+            style="
+              border-color: rgba(124, 58, 237, 0.4);
+              background: linear-gradient(
+                180deg,
+                rgba(124, 58, 237, 0.05) 0%,
+                rgba(0, 0, 0, 0) 100%
+              );
+            "
+          >
+            <div class="card-icon">💎</div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 0.5rem;
+                flex-direction: column;
+                gap: 0.5rem;
+              "
+            >
+              <h3 style="margin: 0">Supporter</h3>
+              <span
+                style="
+                  background: var(--accent-purple);
+                  color: white;
+                  font-size: 0.75rem;
+                  padding: 2px 8px;
+                  border-radius: 12px;
+                "
+                >$4.99/mo</span
+              >
+            </div>
+            <p style="margin-bottom: 1rem">
+              Limit increased to <strong>60 scrapes/day</strong>. Includes
+              access to <strong>Cloud Gallery</strong> for saving post data.
+            </p>
+            <p style="font-size: 0.85rem; color: #a5f3fc">
+              <strong>Unlimited Mode:</strong> Add your own
+              <em>Apify API Key</em> in settings to bypass all daily limits
+              completely.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+      <!-- Call to Action -->
+      <section class="cta-section animate-fade-up delay-500 hidden">
+        <h2
+          style="
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: #fff;
+          "
+        >
+          Scraping, solved.
+        </h2>
+        <p style="color: var(--text-secondary); margin-bottom: 1.5rem">
+          Leverage the power of Apify without writing a single line of scraper
+          code.
+        </p>
+        <button class="cta-btn" onclick="alert('Join the beta waitlist!')">
+          Get Early Access
+        </button>
+      </section>
+    </main>
+
+    <footer>
+      <div class="container footer-flex">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+           <div>&copy; 2025 instaScraper Inc.</div>
+           <div style="font-size: 0.65rem; opacity: 0.5;">
+             Not affiliated with Meta Platforms, Inc. or Apify Technologies s.r.o.
+           </div>
+        </div>
+        <div style="display: flex; gap: 1.5rem; align-items: center">
+          <a href="#" style="color: inherit; text-decoration: none; font-weight: bold;">Dev Access</a>
+          <a href="https://github.com/nykadamec/instaScraper_dev" style="color: inherit; text-decoration: none">GitHub</a>
+          <a href="#" style="color: inherit; text-decoration: none">Docs</a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>
