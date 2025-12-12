@@ -23,26 +23,52 @@ app.post('/run', async (c) => {
         const user = c.get('user') as any
         if (!user) return c.json({ error: 'Unauthorized' }, 401)
 
-        const { actorId, input } = await c.req.json()
+        const { actorId, input, token } = await c.req.json()
         
         if (!actorId) {
             return c.json({ error: 'actorId is required' }, 400)
         }
 
-        const client = new ApifyClient({ token: c.env.APIFY_TOKEN })
+        // Use custom token if provided, otherwise fallback to env
+        const apifyToken = token || c.env.APIFY_TOKEN
+        if (!apifyToken) {
+            return c.json({ error: 'No Apify Token available' }, 500)
+        }
+
+        const client = new ApifyClient({ token: apifyToken })
         
         // Start the run
         const run = await client.actor(actorId).call(input)
 
         // Save to DB
         const prisma = getPrisma(c.env.DB)
+        // Try to extract postUrl from input
+        let postUrl: string | undefined = undefined
+        if (input && typeof input === 'object') {
+             // Check startUrls array
+             if (Array.isArray(input.startUrls) && input.startUrls.length > 0) {
+                 const firstUrl = input.startUrls[0]
+                 if (typeof firstUrl === 'string') postUrl = firstUrl
+                 else if (firstUrl.url) postUrl = firstUrl.url
+             }
+             // Check directUrls array
+             else if (Array.isArray(input.directUrls) && input.directUrls.length > 0) {
+                 postUrl = input.directUrls[0]
+             }
+             // Check url field
+             else if (input.url) {
+                 postUrl = input.url
+             }
+        }
+
         const job = await prisma.scrapeJob.create({
             data: {
                 userId: user.id,
                 actorId: actorId,
                 apifyRunId: run.id,
                 status: run.status,
-                input: JSON.stringify(input || {})
+                input: JSON.stringify(input || {}),
+                postUrl: postUrl // Pass explicitly even if undefined (Prisma handles optional)
             }
         })
 
@@ -69,18 +95,29 @@ app.get('/job/:id', async (c) => {
 
         // If running, check status on Apify
         if (job.apifyRunId) {
-            const client = new ApifyClient({ token: c.env.APIFY_TOKEN })
-            const run = await client.run(job.apifyRunId).get()
+            // Use provided token or env fallback
+            // Note: We don't store the custom token, so we fallback to env here. 
+            // If the job was started with a custom token that is NOT in env, this check might fail 401.
+            // Improvement: Store encrypted token or require token in this GET request too.
+            const client = new ApifyClient({ token: c.env.APIFY_TOKEN }) 
             
-            if (run && run.status !== job.status) {
-                // Update DB
-                const updatedJob = await prisma.scrapeJob.update({
-                    where: { id },
-                    data: { status: run.status }
-                })
-                return c.json({ job: updatedJob, run })
+            try {
+                const run = await client.run(job.apifyRunId).get()
+                
+                if (run && run.status !== job.status) {
+                    // Update DB
+                    const updatedJob = await prisma.scrapeJob.update({
+                        where: { id },
+                        data: { status: run.status }
+                    })
+                    return c.json({ job: updatedJob, run })
+                }
+                return c.json({ job, run })
+            } catch (apifyError) {
+                console.warn('Failed to fetch Apify status:', apifyError)
+                // Return job from DB if Apify check fails (e.g. wrong token)
+                return c.json({ job, warning: 'Could not sync with Apify (Check token)' })
             }
-            return c.json({ job, run })
         }
 
         return c.json({ job })

@@ -41,6 +41,8 @@ function Debug() {
       'api': true,
       'auth-test': true,
       'apify-tester': true,
+      'user-editor': true,
+      'system-config': true,
       'd1': true,
       'd1-local': true,
       'r2': true
@@ -51,8 +53,33 @@ function Debug() {
   const [authResponse, setAuthResponse] = useState<any>(null)
 
   // Apify Test State
-  const [apifyForm, setApifyForm] = useState({ actorId: '', input: '', url: '' })
+  const [apifyForm, setApifyForm] = useState({ actorId: 'shu8hvrXbJbY3Eb9W', input: '', url: '', token: 'apify_api_lFnd0SxObMxP8u6k4FZwcLqkMpHBbx2hODon' })
   const [apifyResult, setApifyResult] = useState<any>(null)
+  const [datasetItems, setDatasetItems] = useState<any[]>([])
+  const [activeTab, setActiveTab] = useState<'run' | 'dataset'>('run')
+  const [recentJobs, setRecentJobs] = useState<any[]>([])
+
+  // User Editor State
+  const [userSearch, setUserSearch] = useState('')
+  const [foundUsers, setFoundUsers] = useState<any[]>([])
+  const [selectedUser, setSelectedUser] = useState<any>(null)
+  const [userEditForm, setUserEditForm] = useState({
+      password: '',
+      email: '',
+      credits: 0,
+      role: 'USER',
+      planId: 'FREE',
+      subStartDate: '',
+      subEndDate: ''
+  })
+
+  // System Config State
+  const [systemConfig, setSystemConfig] = useState<any>({
+      maintenance_mode: 'false',
+      language: 'en',
+      APIFY_TOKEN: ''
+  })
+  const [bulkCredits, setBulkCredits] = useState({ amount: 10, target: 'FREE' })
 
   // --- EFFECTS ---
 
@@ -119,6 +146,16 @@ function Debug() {
       const r2Res = await fetch('http://localhost:8787/api/is/cloudflare/r2')
       const r2Json = await r2Res.json()
       setR2Data(r2Json)
+
+      // 4. Fetch System Config
+      const configRes = await fetch('http://localhost:8787/api/is/admin/config', {
+           headers: { 'Authorization': `Bearer ${localStorage.getItem('debug_token')}` }
+      })
+      const configJson = await configRes.json()
+      if (configJson.config) {
+          setSystemConfig((prev: any) => ({ ...prev, ...configJson.config }))
+      }
+
     } catch (error) {
       console.error('Failed to fetch data:', error)
     } finally {
@@ -171,6 +208,28 @@ function Debug() {
      }
      fetchRows()
    }, [selectedLocalTable, isAdmin])
+
+  // 5. Fetch Recent Scrape Jobs (If admin)
+  useEffect(() => {
+    if (!isAdmin || !openSections['apify-tester']) return
+    
+    const fetchJobs = async () => {
+        try {
+            // We use the local D1 API to fetch recent jobs from ScrapeJob table
+            // This is a bit of a hack, ideally we should have a dedicated endpoint for this
+            const res = await fetch('http://localhost:8787/api/is/local-d1/ScrapeJob?limit=5')
+            const json = await res.json()
+            if (json.rows) {
+                // Sort by createdAt desc (assuming rows are returned in insertion order or we sort manually)
+                const sorted = json.rows.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                setRecentJobs(sorted)
+            }
+        } catch (e) {
+            console.error('Failed to fetch jobs', e)
+        }
+    }
+    fetchJobs()
+  }, [isAdmin, openSections['apify-tester'], apifyResult]) // Refresh when result changes
 
   // --- HANDLERS ---
 
@@ -296,6 +355,11 @@ function Debug() {
       }
   }
   
+  const loadJob = (job: any) => {
+      setApifyResult({ job: job, run: { status: job.status, id: job.apifyRunId } })
+      setActiveTab('run')
+  }
+
   const handleApifySubmit = async () => {
       setLoading(true)
       try {
@@ -340,16 +404,79 @@ function Debug() {
               },
               body: JSON.stringify({
                   actorId: apifyForm.actorId,
-                  input: inputJson
+                  input: inputJson,
+                  token: apifyForm.token // Optional: Send custom token if backend supports it (needs backend update to use it)
               })
           })
           const data = await res.json()
           setApifyResult(data)
+          setActiveTab('run')
       } catch (err: any) {
           setApifyResult({ error: err.message })
       } finally {
           setLoading(false)
       }
+  }
+
+  const handleCheckStatus = async (silent = false) => {
+      if (!apifyResult?.job?.id) return
+      if (!silent) setLoading(true)
+      try {
+          const token = localStorage.getItem('debug_token')
+          const res = await fetch(`http://localhost:8787/api/is/apify/job/${apifyResult.job.id}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+          })
+          const data = await res.json()
+          // Preserve run output structure if updating
+          setApifyResult(data)
+          
+          // If status is SUCCEEDED, auto-fetch dataset
+          if (data?.run?.status === 'SUCCEEDED' && data?.job?.id) {
+              handleGetDataset(data.job.id)
+          }
+      } catch (err: any) {
+          console.error(err)
+      } finally {
+          if (!silent) setLoading(false)
+      }
+  }
+
+  // Polling Effect
+  useEffect(() => {
+      const status = apifyResult?.run?.status
+      if (status === 'RUNNING' || status === 'READY') {
+          const interval = setInterval(() => {
+              handleCheckStatus(true)
+          }, 2000)
+          return () => clearInterval(interval)
+      }
+  }, [apifyResult])
+
+  const handleGetDataset = async (jobId?: string) => {
+      const id = jobId || apifyResult?.job?.id
+      if (!id) return
+      
+      // Don't set global loading here to avoid flickering if called automatically
+      // setLoading(true) 
+      try {
+          const token = localStorage.getItem('debug_token')
+          const res = await fetch(`http://localhost:8787/api/is/apify/job/${id}/dataset`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+          })
+          const data = await res.json()
+          setDatasetItems(data.items || [])
+          // Optional: Auto-switch tab? Maybe annoying if user is reading JSON.
+          // setActiveTab('dataset') 
+      } catch (err: any) {
+          console.error(err)
+          // alert('Failed to fetch dataset: ' + err.message)
+      }
+  }
+  
+  const handleResetCanvas = () => {
+      setApifyResult(null)
+      setDatasetItems([])
+      setActiveTab('run')
   }
   
   const apiGroups = {
@@ -439,6 +566,115 @@ function Debug() {
   const handleLogout = () => {
       localStorage.removeItem('debug_token')
       window.location.reload()
+  }
+
+  const handleUserSearch = async () => {
+      setLoading(true)
+      try {
+          const token = localStorage.getItem('debug_token')
+          const res = await fetch(`http://localhost:8787/api/is/admin/users?q=${userSearch}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+          })
+          const data = await res.json()
+          setFoundUsers(data.users || [])
+      } catch (e) {
+          console.error(e)
+          alert('Search failed')
+      } finally {
+          setLoading(false)
+      }
+  }
+
+  const handleUserSelect = (user: any) => {
+      setSelectedUser(user)
+      setUserEditForm({
+          password: '',
+          email: user.email,
+          credits: user.credits,
+          role: user.role,
+          planId: user.planId,
+          subStartDate: user.subStartDate ? new Date(user.subStartDate).toISOString().split('T')[0] : '',
+          subEndDate: user.subEndDate ? new Date(user.subEndDate).toISOString().split('T')[0] : ''
+      })
+  }
+
+  const handleUserUpdate = async () => {
+      if (!selectedUser) return
+      setLoading(true)
+      try {
+          const token = localStorage.getItem('debug_token')
+          const res = await fetch(`http://localhost:8787/api/is/admin/users/${selectedUser.id}`, {
+              method: 'PATCH',
+              headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}` 
+              },
+              body: JSON.stringify(userEditForm)
+          })
+          const data = await res.json()
+          if (res.ok) {
+              alert('User updated!')
+              handleUserSearch() // Refresh list
+              setSelectedUser(null)
+          } else {
+              alert('Update failed: ' + data.error)
+          }
+      } catch (e: any) {
+          alert('Error: ' + e.message)
+      } finally {
+          setLoading(false)
+      }
+  }
+
+  const handleConfigSave = async () => {
+      setLoading(true)
+      try {
+          const token = localStorage.getItem('debug_token')
+          const res = await fetch('http://localhost:8787/api/is/admin/config', {
+              method: 'PUT',
+              headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}` 
+              },
+              body: JSON.stringify(systemConfig)
+          })
+          if (res.ok) {
+              alert('Configuration Saved!')
+          } else {
+              const err = await res.json()
+              alert('Save failed: ' + err.error)
+          }
+      } catch (e: any) {
+          alert('Error: ' + e.message)
+      } finally {
+          setLoading(false)
+      }
+  }
+
+  const handleBulkCredits = async () => {
+      if (!confirm(`Are you sure you want to add ${bulkCredits.amount} credits to ${bulkCredits.target} users?`)) return
+      setLoading(true)
+      try {
+          const token = localStorage.getItem('debug_token')
+          const res = await fetch('http://localhost:8787/api/is/admin/credits/bulk', {
+              method: 'POST',
+              headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}` 
+              },
+              body: JSON.stringify(bulkCredits)
+          })
+          const data = await res.json()
+          if (res.ok) {
+              alert(data.message)
+          } else {
+              alert('Failed: ' + data.error)
+          }
+      } catch (e: any) {
+          alert('Error: ' + e.message)
+      } finally {
+          setLoading(false)
+      }
   }
 
   // --- RENDER ---
@@ -584,6 +820,58 @@ function Debug() {
                       <div className="p-4 overflow-auto bg-slate-900 text-green-400 font-mono text-sm">
                           <pre>{JSON.stringify(testResult.data, null, 2)}</pre>
                       </div>
+                      {/* Recent Jobs List */}
+                      <div className="col-span-1 md:col-span-2 mt-4 bg-gray-50 rounded-lg border p-4">
+                          <h4 className="text-sm font-bold text-gray-600 uppercase mb-3">Recent Scrape Jobs (Local DB)</h4>
+                          {recentJobs.length > 0 ? (
+                              <div className="overflow-x-auto">
+                                  <table className="min-w-full text-xs text-left bg-white rounded border">
+                                      <thead className="bg-gray-100 text-gray-600">
+                                          <tr>
+                                              <th className="px-3 py-2">Created</th>
+                                              <th className="px-3 py-2">Status</th>
+                                              <th className="px-3 py-2">Actor ID</th>
+                                              <th className="px-3 py-2">Input</th>
+                                              <th className="px-3 py-2">Action</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100">
+                                          {recentJobs.map(job => (
+                                              <tr key={job.id} className="hover:bg-blue-50">
+                                                  <td className="px-3 py-2 whitespace-nowrap">
+                                                      {new Date(job.createdAt).toLocaleString()}
+                                                  </td>
+                                                  <td className="px-3 py-2">
+                                                      <span className={`px-1.5 py-0.5 rounded font-bold uppercase text-[10px] ${
+                                                          job.status === 'SUCCEEDED' ? 'bg-green-100 text-green-700' :
+                                                          job.status === 'RUNNING' ? 'bg-blue-100 text-blue-700' :
+                                                          job.status === 'READY' ? 'bg-gray-200 text-gray-600' :
+                                                          'bg-red-100 text-red-700'
+                                                      }`}>
+                                                          {job.status}
+                                                      </span>
+                                                  </td>
+                                                  <td className="px-3 py-2 font-mono text-gray-600">{job.actorId}</td>
+                                                  <td className="px-3 py-2 font-mono text-gray-500 truncate max-w-[200px]">
+                                                      {job.input}
+                                                  </td>
+                                                  <td className="px-3 py-2">
+                                                      <button 
+                                                        onClick={() => loadJob(job)}
+                                                        className="text-blue-600 hover:text-blue-800 font-medium hover:underline"
+                                                      >
+                                                          Load
+                                                      </button>
+                                                  </td>
+                                              </tr>
+                                          ))}
+                                      </tbody>
+                                  </table>
+                              </div>
+                          ) : (
+                              <p className="text-gray-400 italic text-sm">No jobs found.</p>
+                          )}
+                      </div>
                   </div>
               </div>
           )}
@@ -680,6 +968,16 @@ function Debug() {
                       {/* Form */}
                       <div className="space-y-4">
                           <div>
+                              <label className="block text-sm font-medium text-gray-700">Apify Token (Optional)</label>
+                              <input 
+                                type="password" 
+                                placeholder="If empty, uses backend env token"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2"
+                                value={apifyForm.token}
+                                onChange={e => setApifyForm({...apifyForm, token: e.target.value})}
+                              />
+                          </div>
+                          <div>
                               <label className="block text-sm font-medium text-gray-700">Actor ID</label>
                               <input 
                                 type="text" 
@@ -719,20 +1017,342 @@ function Debug() {
                       </div>
 
                       {/* Result */}
-                      <div className="bg-gray-50 rounded-lg p-4 border overflow-auto max-h-[300px]">
-                          <h4 className="text-sm font-bold text-gray-500 mb-2 uppercase">Run Output</h4>
-                          {apifyResult ? (
-                              <pre className="text-xs font-mono text-gray-800 whitespace-pre-wrap">
-                                  {JSON.stringify(apifyResult, null, 2)}
-                              </pre>
-                          ) : (
-                              <p className="text-sm text-gray-400 italic">No run data.</p>
-                          )}
+                      <div className="bg-gray-50 rounded-lg border overflow-hidden flex flex-col h-[420px]">
+                          <div className="bg-gray-100 px-4 py-2 border-b flex justify-between items-center">
+                              <div className="flex items-center gap-3">
+                                  <h4 className="text-sm font-bold text-gray-600 uppercase">Run Output</h4>
+                                  {apifyResult?.run?.status && (
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all duration-500 ease-in-out ${
+                                          apifyResult.run.status === 'SUCCEEDED' ? 'bg-green-100 text-green-700' :
+                                          apifyResult.run.status === 'RUNNING' ? 'bg-blue-100 text-blue-700 animate-pulse' :
+                                          apifyResult.run.status === 'READY' ? 'bg-gray-200 text-gray-600 animate-pulse' :
+                                          'bg-red-100 text-red-700'
+                                      }`}>
+                                          {apifyResult.run.status}
+                                      </span>
+                                  )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                  {apifyResult && (
+                                      <>
+                                          <button 
+                                            onClick={() => handleCheckStatus(false)}
+                                            disabled={loading}
+                                            className="text-xs bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-50 disabled:opacity-50"
+                                          >
+                                              ↻ Status
+                                          </button>
+                                          <button 
+                                            onClick={handleResetCanvas}
+                                            className="text-xs bg-red-50 border border-red-200 text-red-600 px-2 py-1 rounded hover:bg-red-100"
+                                          >
+                                              Reset
+                                          </button>
+                                          <div className="h-4 w-px bg-gray-300 mx-1"></div>
+                                      </>
+                                  )}
+                                  <div className="flex bg-white rounded border border-gray-200 overflow-hidden">
+                                      <button 
+                                        onClick={() => setActiveTab('run')}
+                                        className={`px-2 py-1 text-xs font-medium ${activeTab === 'run' ? 'bg-gray-100 text-gray-800' : 'text-gray-500 hover:bg-gray-50'}`}
+                                      >
+                                          JSON
+                                      </button>
+                                      <button 
+                                        onClick={() => setActiveTab('dataset')}
+                                        className={`px-2 py-1 text-xs font-medium ${activeTab === 'dataset' ? 'bg-gray-100 text-gray-800' : 'text-gray-500 hover:bg-gray-50'}`}
+                                      >
+                                          Dataset ({datasetItems.length})
+                                      </button>
+                                  </div>
+                              </div>
+                          </div>
+                          <div className="flex-1 overflow-auto p-4 custom-scrollbar">
+                              {activeTab === 'run' ? (
+                                  apifyResult ? (
+                                      <pre className="text-xs font-mono text-gray-800 whitespace-pre-wrap break-all leading-relaxed">
+                                          {JSON.stringify(apifyResult, null, 2)}
+                                      </pre>
+                                  ) : (
+                                      <div className="h-full flex flex-col items-center justify-center text-gray-400 italic">
+                                          <p>No run data yet.</p>
+                                          <p className="text-xs mt-2">Execute a run to see results here.</p>
+                                      </div>
+                                  )
+                              ) : (
+                                  datasetItems.length > 0 ? (
+                                      <pre className="text-xs font-mono text-gray-800 whitespace-pre-wrap break-all leading-relaxed">
+                                          {JSON.stringify(datasetItems, null, 2)}
+                                      </pre>
+                                  ) : (
+                                      <div className="h-full flex flex-col items-center justify-center text-gray-400 italic">
+                                          <p>No dataset items loaded.</p>
+                                          <p className="text-xs mt-2">Click "⬇ Dataset" to fetch results.</p>
+                                      </div>
+                                  )
+                              )}
+                          </div>
                       </div>
                   </div>
               </div>
           )}
       </div>
+
+          {/* User Editor */}
+          <div className="w-full max-w-6xl mb-8">
+              <div 
+                className="flex justify-between items-center cursor-pointer bg-white p-4 rounded-t-xl shadow-sm border-b"
+                onClick={() => toggleSection('user-editor')}
+              >
+                 <h2 className="text-2xl font-semibold text-gray-800">User Editor (Admin)</h2>
+                 <span className="text-gray-500">{openSections['user-editor'] ? '▼' : '▶'}</span>
+              </div>
+
+              {openSections['user-editor'] && (
+                  <div className="bg-white p-6 rounded-b-xl shadow-md">
+                      <div className="flex gap-4 mb-6">
+                          <input 
+                              type="text" 
+                              placeholder="Search by Email, Username or ID" 
+                              className="flex-1 border p-2 rounded"
+                              value={userSearch}
+                              onChange={e => setUserSearch(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && handleUserSearch()}
+                          />
+                          <button 
+                              onClick={handleUserSearch}
+                              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                          >
+                              Search
+                          </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          {/* List */}
+                          <div className="md:col-span-1 border rounded bg-gray-50 h-[400px] overflow-auto">
+                              {foundUsers.length === 0 ? (
+                                  <div className="p-4 text-gray-400 italic text-center">No users found</div>
+                              ) : (
+                                  <div className="divide-y">
+                                      {foundUsers.map(user => (
+                                          <div 
+                                              key={user.id} 
+                                              onClick={() => handleUserSelect(user)}
+                                              className={`p-3 cursor-pointer hover:bg-blue-50 transition-colors ${selectedUser?.id === user.id ? 'bg-blue-100 border-l-4 border-blue-500' : ''}`}
+                                          >
+                                              <p className="font-bold text-sm text-gray-800">{user.username}</p>
+                                              <p className="text-xs text-gray-500">{user.email}</p>
+                                              <div className="flex gap-2 mt-1">
+                                                  <span className="text-[10px] bg-gray-200 px-1 rounded">{user.role}</span>
+                                                  <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded">{user.planId}</span>
+                                              </div>
+                                          </div>
+                                      ))}
+                                  </div>
+                              )}
+                          </div>
+
+                          {/* Form */}
+                          <div className="md:col-span-2 border rounded p-6 bg-white">
+                              {selectedUser ? (
+                                  <div className="space-y-4">
+                                      <h3 className="font-bold text-lg border-b pb-2 mb-4">Editing: {selectedUser.username}</h3>
+                                      
+                                      <div className="grid grid-cols-2 gap-4">
+                                          <div>
+                                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
+                                              <input 
+                                                  className="w-full border p-2 rounded"
+                                                  value={userEditForm.email}
+                                                  onChange={e => setUserEditForm({...userEditForm, email: e.target.value})}
+                                              />
+                                          </div>
+                                          <div>
+                                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">New Password (Optional)</label>
+                                              <input 
+                                                  type="password"
+                                                  className="w-full border p-2 rounded"
+                                                  placeholder="Leave empty to keep current"
+                                                  value={userEditForm.password}
+                                                  onChange={e => setUserEditForm({...userEditForm, password: e.target.value})}
+                                              />
+                                          </div>
+                                          <div>
+                                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Role</label>
+                                              <select 
+                                                  className="w-full border p-2 rounded"
+                                                  value={userEditForm.role}
+                                                  onChange={e => setUserEditForm({...userEditForm, role: e.target.value})}
+                                              >
+                                                  <option value="USER">USER</option>
+                                                  <option value="ADMIN">ADMIN</option>
+                                              </select>
+                                          </div>
+                                          <div>
+                                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Plan</label>
+                                              <select 
+                                                  className="w-full border p-2 rounded"
+                                                  value={userEditForm.planId}
+                                                  onChange={e => setUserEditForm({...userEditForm, planId: e.target.value})}
+                                              >
+                                                  <option value="FREE">FREE</option>
+                                                  <option value="SUPPORTER">SUPPORTER</option>
+                                              </select>
+                                          </div>
+                                          <div>
+                                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Credits</label>
+                                              <input 
+                                                  type="number"
+                                                  className="w-full border p-2 rounded"
+                                                  value={userEditForm.credits}
+                                                  onChange={e => setUserEditForm({...userEditForm, credits: Number(e.target.value)})}
+                                              />
+                                          </div>
+                                          <div className="col-span-2 grid grid-cols-2 gap-4 border-t pt-4 mt-2">
+                                              <div>
+                                                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Subscription Start</label>
+                                                  <input 
+                                                      type="date"
+                                                      className="w-full border p-2 rounded"
+                                                      value={userEditForm.subStartDate}
+                                                      onChange={e => setUserEditForm({...userEditForm, subStartDate: e.target.value})}
+                                                  />
+                                              </div>
+                                              <div>
+                                                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Subscription End</label>
+                                                  <input 
+                                                      type="date"
+                                                      className="w-full border p-2 rounded"
+                                                      value={userEditForm.subEndDate}
+                                                      onChange={e => setUserEditForm({...userEditForm, subEndDate: e.target.value})}
+                                                  />
+                                              </div>
+                                          </div>
+                                      </div>
+
+                                      <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
+                                          <button 
+                                              onClick={() => setSelectedUser(null)}
+                                              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                                          >
+                                              Cancel
+                                          </button>
+                                          <button 
+                                              onClick={handleUserUpdate}
+                                              className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow"
+                                          >
+                                              Save Changes
+                                          </button>
+                                      </div>
+                                  </div>
+                              ) : (
+                                  <div className="h-full flex items-center justify-center text-gray-400 italic">
+                                      Select a user to edit details
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                  </div>
+              )}
+          </div>
+
+          {/* System Config */}
+          <div className="w-full max-w-6xl mb-8">
+              <div 
+                className="flex justify-between items-center cursor-pointer bg-white p-4 rounded-t-xl shadow-sm border-b"
+                onClick={() => toggleSection('system-config')}
+              >
+                 <h2 className="text-2xl font-semibold text-gray-800">System Config (Admin)</h2>
+                 <span className="text-gray-500">{openSections['system-config'] ? '▼' : '▶'}</span>
+              </div>
+
+              {openSections['system-config'] && (
+                  <div className="bg-white p-6 rounded-b-xl shadow-md grid grid-cols-1 md:grid-cols-2 gap-8">
+                      {/* Settings */}
+                      <div className="border rounded p-4 bg-gray-50">
+                          <h3 className="font-bold text-lg mb-4 text-gray-700">Global Settings</h3>
+                          <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                  <label className="text-sm font-bold text-gray-600">Maintenance Mode</label>
+                                  <button 
+                                      onClick={() => setSystemConfig((prev: any) => ({ ...prev, maintenance_mode: prev.maintenance_mode === 'true' ? 'false' : 'true' }))}
+                                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${systemConfig.maintenance_mode === 'true' ? 'bg-red-600' : 'bg-gray-200'}`}
+                                  >
+                                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${systemConfig.maintenance_mode === 'true' ? 'translate-x-6' : 'translate-x-1'}`} />
+                                  </button>
+                              </div>
+
+                              <div>
+                                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Language</label>
+                                  <select 
+                                      className="w-full border p-2 rounded"
+                                      value={systemConfig.language || 'en'}
+                                      onChange={e => setSystemConfig((prev: any) => ({ ...prev, language: e.target.value }))}
+                                  >
+                                      <option value="en">English (en)</option>
+                                      <option value="cz">Czech (cz)</option>
+                                  </select>
+                              </div>
+
+                              <div>
+                                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Global Apify API Key (APIFY_TOKEN)</label>
+                                  <input 
+                                      type="password"
+                                      className="w-full border p-2 rounded font-mono text-sm"
+                                      placeholder="apify_api_..."
+                                      value={systemConfig.APIFY_TOKEN || ''}
+                                      onChange={e => setSystemConfig((prev: any) => ({ ...prev, APIFY_TOKEN: e.target.value }))}
+                                  />
+                              </div>
+
+                              <button 
+                                  onClick={handleConfigSave}
+                                  className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 font-bold shadow mt-2"
+                              >
+                                  Save Configuration
+                              </button>
+                          </div>
+                      </div>
+
+                      {/* Bulk Actions */}
+                      <div className="border rounded p-4 bg-gray-50">
+                          <h3 className="font-bold text-lg mb-4 text-gray-700">Bulk Actions</h3>
+                          
+                          <div className="bg-white p-4 rounded border shadow-sm">
+                              <h4 className="font-bold text-sm text-gray-800 mb-2">🎁 Add Credits</h4>
+                              <p className="text-xs text-gray-500 mb-4">Add credits to multiple users at once.</p>
+                              
+                              <div className="space-y-3">
+                                  <div>
+                                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Amount</label>
+                                      <input 
+                                          type="number"
+                                          className="w-full border p-2 rounded"
+                                          value={bulkCredits.amount}
+                                          onChange={e => setBulkCredits({...bulkCredits, amount: Number(e.target.value)})}
+                                      />
+                                  </div>
+                                  
+                                  <div className="flex gap-2">
+                                      <button 
+                                          onClick={() => { setBulkCredits({...bulkCredits, target: 'FREE'}); setTimeout(handleBulkCredits, 0) }} 
+                                          className="flex-1 bg-green-100 text-green-800 border border-green-200 py-2 rounded hover:bg-green-200 text-sm font-medium"
+                                      >
+                                          Add to FREE Users
+                                      </button>
+                                      <button 
+                                          onClick={() => { setBulkCredits({...bulkCredits, target: 'ALL'}); setTimeout(handleBulkCredits, 0) }}
+                                          className="flex-1 bg-gray-200 text-gray-800 border border-gray-300 py-2 rounded hover:bg-gray-300 text-sm font-medium"
+                                      >
+                                          Add to ALL Users
+                                      </button>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              )}
+          </div>
 
       <div className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* D1 Data Table */}

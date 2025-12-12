@@ -5,6 +5,7 @@ import localD1Router from './routes/local-d1'
 import authRouter from './routes/auth'
 import meRouter from './routes/me'
 import apifyRouter from './routes/apify'
+import adminRouter from './routes/admin'
 import { authMiddleware } from './middleware/auth'
 
 type Bindings = {
@@ -50,21 +51,18 @@ app.route('/api/is/cloudflare', cloudflareRouter)
 app.route('/api/is/local-d1', localD1Router)
 app.route('/api/is/auth', authRouter)
 
-// Webhook (Public but specialized)
-app.route('/api/is/apify', apifyRouter) // Note: /webhook is public, others need auth. 
-// However, apifyRouter implementation currently doesn't check auth inside webhook, 
-// but DOES check auth inside /run, /job etc. 
-// So we can mount it here, but we should apply authMiddleware to specific sub-routes if not handled inside.
-// In apify.ts we manually check c.get('user') which requires authMiddleware to run BEFORE.
-
 // Protected Routes
 app.use('/api/is/me/*', authMiddleware)
 app.route('/api/is/me', meRouter)
+app.route('/api/is/admin', adminRouter)
 
 // Apply Auth Middleware to Apify Routes EXCEPT webhook
+// MUST be defined BEFORE mounting the router
 app.use('/api/is/apify/run', authMiddleware)
 app.use('/api/is/apify/job/*', authMiddleware) 
-// Webhook remains public
+
+// Webhook (Public but specialized)
+app.route('/api/is/apify', apifyRouter)
 
 app.get('/api/is/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() })
