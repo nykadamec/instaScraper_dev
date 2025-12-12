@@ -1,0 +1,29 @@
+{
+  "name": "backend",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify",
+    "build": "tsc",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@instascraper/database": "workspace:*",
+    "@instascraper/shared": "workspace:*",
+    "@prisma/adapter-d1": "^6.0.0",
+    "@prisma/client": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "cloudflare": "^5.2.0",
+    "hono": "^4.6.14",
+    "apify-client-ts": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "@types/bcryptjs": "^3.0.0",
+    "dotenv": "^17.2.3",
+    "eslint": "^9.17.0",
+    "tsx": "^4.21.0",
+    "wrangler": "^4.54.0"
+  }
+}

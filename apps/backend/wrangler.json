@@ -1,0 +1,22 @@
+{
+  "name": "instascraper-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-07-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "instascrapper",
+      "database_id": "b882f941-664c-4b28-9d98-74555d84129d"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "instascrapper-data"
+    }
+  ],
+  "vars": {
+    "APIFY_TOKEN": "apify_api_lFnd0SxObMxP8u6k4FZwcLqkMpHBbx2hODon"
+  }
+}

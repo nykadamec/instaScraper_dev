@@ -1,0 +1,95 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Enums pro stavy a role
+enum JobStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String    // Hashed
+  username      String
+  role          Role      @default(USER)
+
+  // Apify Integration
+  apifyKey      String?   // Custom key (encrypted ideally)
+
+  // Billing & Credits
+  credits       Int       @default(10) // Current balance
+
+  // Subscription Info
+  planId        String    @default("FREE") // Refers to hardcoded PLANS constant (FREE, SUPPORTER)
+  subStartDate  DateTime  @default(now())
+  subEndDate    DateTime?
+
+  // Relations
+  jobs          ScrapeJob[]
+  images        Image[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// Hlavní model pro Scraping - slouží i jako Historie
+model ScrapeJob {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Generic Fields
+  status      String    @default("PENDING") // Changed from Enum to String to support Apify statuses
+  errorMessage String?
+  
+  // Input Data
+  postUrl     String?   // Optional now (for simple URL scrapes)
+  input       String?   // JSON string with parameters (for Apify)
+  
+  // Apify Specific
+  apifyRunId  String?
+  actorId     String?
+
+  // Scraped Data
+  metadata    String?   // JSON string with caption, likes, author etc.
+
+  // Relations
+  images      Image[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// Samostatná tabulka pro obrázky (kvůli SQLite limitaci String[])
+model Image {
+  id          String    @id @default(cuid())
+  jobId       String
+  job         ScrapeJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  url         String    // Original Instagram URL
+  storageUrl  String?   // Your Cloud Storage URL (pro Cloud Gallery)
+  width       Int?
+  height      Int?
+
+  createdAt   DateTime  @default(now())
+}
